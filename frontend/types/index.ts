@@ -1,4 +1,4 @@
-export type AlertCategory = "disaster" | "road_closure";
+export type AlertCategory = "disaster" | "road_closure" | "shelter";
 export type Severity = "high" | "medium" | "low";
 
 export interface LiveAlert {

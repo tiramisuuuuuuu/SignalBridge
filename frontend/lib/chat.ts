@@ -1,27 +1,23 @@
-import { sampleAlerts } from "@/data/sample";
 import type { ChatMessage, UserLocation } from "@/types";
+import { askBackend, loadCachedPacket, packetToAlerts } from "@/lib/api";
 
-// Mock responder. Replace the body with: fetch("/api/chat", { method: "POST", body: JSON.stringify({ question, location }) })
-// The backend should return the same shape: { text, sources, warning }.
-export async function askAssistant(question: string, _loc: UserLocation | null): Promise<Omit<ChatMessage, "id" | "role">> {
-  await new Promise((r) => setTimeout(r, 900));
-  const q = question.toLowerCase();
-  const pick = (cat: string) => sampleAlerts.filter((a) => a.category === cat);
-  const toSources = (list: typeof sampleAlerts) =>
-    list.map((a) => ({ name: a.sourceName, url: a.sourceUrl, updatedAt: a.updatedAt, distanceMiles: a.distanceMiles }));
+// Online: asks the SignalBridge assistant. Offline: answers from the saved packet.
+export async function askAssistant(question: string, loc: UserLocation | null): Promise<Omit<ChatMessage, "id" | "role">> {
   const now = new Date().toISOString();
-
-  if (/road|highway|route|closed|traffic/.test(q)) {
-    const list = pick("road_closure");
-    return { createdAt: now, sources: toSources(list),
-      text: list.map((a) => `${a.title} (${a.distanceMiles} miles away). ${a.description}`).join("\n\n") };
+  const saved = loadCachedPacket();
+  try {
+    return await askBackend(question, saved);
+  } catch {
+    if (!saved) {
+      return { createdAt: now, text: "I'm offline and don't have any saved information yet.",
+        warning: "Connect once to download the emergency packet." };
+    }
+    const alerts = packetToAlerts(saved, loc);
+    return {
+      createdAt: now,
+      text: alerts.map((a) => `${a.title}. ${a.description}`).join("\n\n"),
+      sources: alerts.map((a) => ({ name: a.sourceName, url: a.sourceUrl, updatedAt: a.updatedAt })),
+      warning: `Offline: this is saved information from ${new Date(saved.downloadedAt).toLocaleTimeString()}. It may be out of date.`,
+    };
   }
-  if (/disaster|fire|storm|evacuat|danger/.test(q)) {
-    const list = pick("disaster");
-    return { createdAt: now, sources: toSources(list),
-      text: list.map((a) => `${a.title} (${a.distanceMiles} miles away). ${a.description}`).join("\n\n") };
-  }
-  return { createdAt: now,
-    text: "I don't have verified information to answer that yet.",
-    warning: "I can't verify this from the sources I've checked, so I won't guess. Try asking about road closures or nearby disasters." };
 }
