@@ -5,6 +5,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getFreshness, ageMinutes, type EmergencyPacket } from "@signalbridge/shared";
 import { ROOT, collectPacket, diffPackets } from "./collect.js";
+import { checkSources } from "./agents/sourceMonitor.js";
+import { verifyPacket } from "./agents/verification.js";
+import { parseRequest, recommend } from "./agents/residentAssistant.js";
 
 const PORT = Number(process.env.PORT ?? 4000);
 const DATA_FILE = path.join(ROOT, "services/api/data/packets.json");
@@ -155,6 +158,26 @@ app.get("/api/packets/:version", (req, res) => {
   const p = history.find((h) => h.version === Number(req.params.version));
   if (!p) return res.status(404).json({ error: "No such version" });
   res.json(p);
+});
+
+app.get("/api/agents/source-check", (_req, res) => {
+  const p = latest();
+  if (!p) return res.status(404).json({ error: "No packet yet. Call POST /api/sync." });
+  res.json({ packetVersion: p.version, issues: checkSources(p, lastFailures as any) });
+});
+
+app.get("/api/agents/verify", (_req, res) => {
+  const p = latest();
+  if (!p) return res.status(404).json({ error: "No packet yet. Call POST /api/sync." });
+  res.json({ packetVersion: p.version, verdicts: verifyPacket(p) });
+});
+
+app.post("/api/agents/assist", (req, res) => {
+  const p = latest();
+  if (!p) return res.status(404).json({ error: "No packet yet. Call POST /api/sync." });
+  const text = String(req.body?.text ?? "").slice(0, 500).trim();
+  if (!text) return res.status(400).json({ error: "Send { \"text\": \"...\" }" });
+  res.json({ request: text, ...recommend(p, parseRequest(text)) });
 });
 
 await load();
