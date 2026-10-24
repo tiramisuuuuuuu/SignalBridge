@@ -25,7 +25,7 @@ async function runActor(name: string): Promise<any[]> {
   await rm(dataset, { recursive: true, force: true });
 
   await new Promise<void>((resolve, reject) => {
-    const p = spawn("npx", ["tsx", "src/main.ts"], { cwd: dir, stdio: "inherit" });
+    const p = spawn("npx", ["tsx", "src/main.ts"], { cwd: dir, stdio: "inherit", shell: process.platform === "win32" });
     p.on("error", reject);
     p.on("exit", (code) =>
       code === 0 ? resolve() : reject(new Error(`${name} exited with code ${code}`))
