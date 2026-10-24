@@ -3,6 +3,7 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { EmergencyPacket } from "@signalbridge/shared";
+import { detectConflicts } from "./conflicts.js";
 
 export const ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -51,9 +52,11 @@ function toIsoOrNull(raw: unknown): string | null {
 export type Failure = { source: string; field?: string; detail: string };
 
 export async function collectPacket(prev: EmergencyPacket | null) {
-  const [shelterRecords, roadRecords] = await Promise.all([
+  const [shelterRecords, roadRecords, countyRecords] = await Promise.all([
     runActor("shelter-monitor"),
     runActor("road-monitor"),
+    // A county failure must not block the whole sync.
+    runActor("county-monitor").catch(() => [] as any[]),
   ]);
   const all = [...shelterRecords, ...roadRecords];
   const failures: Failure[] = [];
@@ -126,6 +129,17 @@ export async function collectPacket(prev: EmergencyPacket | null) {
     },
   ];
 
+  const countyData = countyRecords.filter((r: any) => r.type === "county_shelter");
+  if (countyData.length > 0) {
+    sources.push({
+      id: "county-emergency",
+      name: "County Emergency Management",
+      url: countyData[0].sourceUrl,
+      lastSuccessfulFetchAt: countyData[0].observedAt,
+    });
+  }
+  const conflicts = detectConflicts(shelters, countyData);
+
   const candidate = {
     version: (prev?.version ?? 0) + 1,
     incidentId: "demo-wildfire-001",
@@ -135,7 +149,7 @@ export async function collectPacket(prev: EmergencyPacket | null) {
     sources,
     shelters,
     roadClosures,
-    conflicts: [],
+    conflicts,
   };
 
   // Reject anything that does not match the shared contract.
