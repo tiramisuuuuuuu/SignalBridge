@@ -3,8 +3,8 @@ import { useState } from "react";
 import type { LiveAlert } from "@/types";
 import { timeAgo } from "@/lib/time";
 
-const ICON = { disaster: "🔴", road_closure: "🚧" } as const;
-const LABEL = { disaster: "Disaster", road_closure: "Road closure" } as const;
+const ICON = { disaster: "🔴", road_closure: "🚧", shelter: "🏠" } as const;
+const LABEL = { disaster: "Disaster", road_closure: "Road closure", shelter: "Shelter" } as const;
 
 export default function AlertBadge({ alert }: { alert: LiveAlert }) {
   const [open, setOpen] = useState(false);
@@ -15,7 +15,7 @@ export default function AlertBadge({ alert }: { alert: LiveAlert }) {
         <span className="sev">{alert.severity}</span>
       </div>
       <h3>{alert.title}</h3>
-      <p className="muted small">{alert.distanceMiles} mi away · Updated {timeAgo(alert.updatedAt)}</p>
+      <p className="muted small">{alert.distanceMiles > 0 && <>{alert.distanceMiles} mi away · </>}Updated {timeAgo(alert.updatedAt)}</p>
       <button className="link" onClick={() => setOpen(!open)} aria-expanded={open}>
         {open ? "Hide details" : "Details"}
       </button>

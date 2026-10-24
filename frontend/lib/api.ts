@@ -123,3 +123,26 @@ export async function speak(text: string) {
     if (typeof window !== "undefined" && "speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance(text));
   }
 }
+
+// ---- Live official data (NWS alerts + FEMA shelters) ----
+export interface LiveData {
+  place: { label: string; lat: number; lng: number };
+  radiusMiles: number;
+  fetchedAt: string;
+  alerts: any[];
+  shelters: any[];
+  errors: string[];
+}
+const liveKey = (label: string) => `signalbridge.live:${label.toLowerCase()}`;
+
+export function loadCachedLive(label: string): LiveData | null {
+  try { return JSON.parse(localStorage.getItem(liveKey(label)) ?? "null"); } catch { return null; }
+}
+export async function loadLive(loc: UserLocation): Promise<LiveData> {
+  const q = loc.lat != null && loc.lng != null
+    ? `lat=${loc.lat}&lng=${loc.lng}&place=${encodeURIComponent(loc.label)}`
+    : `place=${encodeURIComponent(loc.label)}`;
+  const d = await getJSON(`/api/live?${q}&radius=50`);
+  try { localStorage.setItem(liveKey(loc.label), JSON.stringify(d)); } catch { /* ignore */ }
+  return d;
+}

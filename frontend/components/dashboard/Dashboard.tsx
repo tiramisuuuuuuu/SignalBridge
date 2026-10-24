@@ -2,13 +2,12 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import type { UserLocation } from "@/types";
-import { sampleNews } from "@/data/sample";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
 import AlertsRow from "@/components/alerts/AlertsRow";
-import NewsFeed from "@/components/news/NewsFeed";
+import LiveOfficial from "@/components/live/LiveOfficial";
 import ChatPanel from "@/components/chat/ChatPanel";
-import { loadCachedPacket, loadPacket, syncPacket, packetToAlerts, describeChange, type Packet, type Change } from "@/lib/api";
+import { loadCachedPacket, loadPacket, syncPacket, packetToAlerts, describeChange, loadLive, loadCachedLive, type Packet, type Change, type LiveData } from "@/lib/api";
 
 const banner: CSSProperties = {
   margin: "0.5rem 1rem", padding: "0.6rem 0.9rem", borderRadius: 8,
@@ -22,6 +21,22 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
   const [syncing, setSyncing] = useState(false);
   const [changes, setChanges] = useState<Change[]>([]);
   const versionRef = useRef<number | undefined>(undefined);
+  const [live, setLive] = useState<LiveData | null>(null);
+  const [liveSaved, setLiveSaved] = useState(false);
+  const [liveLoading, setLiveLoading] = useState(false);
+
+  // Real official data for the chosen location (saved for offline use).
+  useEffect(() => {
+    const saved = loadCachedLive(location.label);
+    setLive(saved);
+    setLiveSaved(!!saved);
+    setLiveLoading(true);
+    loadLive(location)
+      .then((d) => { setLive(d); setLiveSaved(false); })
+      .catch(() => { /* keep saved copy */ })
+      .finally(() => setLiveLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.label, location.lat, location.lng]);
 
   const apply = useCallback((p: Packet | null) => {
     if (!p) return;
@@ -56,7 +71,8 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
     };
   }, [apply, refresh]);
 
-  const alerts = packetToAlerts(packet, location);
+  const geoLoc = live?.place ? { ...location, lat: live.place.lat, lng: live.place.lng } : location;
+  const alerts = packetToAlerts(packet, geoLoc);
 
   return (
     <div className="shell">
@@ -81,7 +97,7 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
         <button onClick={refresh} disabled={syncing} style={{ padding: "0.45rem 0.9rem", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface)", color: "inherit", cursor: "pointer", opacity: syncing ? 0.6 : 1 }}>{syncing ? "Checking…" : "Check for updates"}</button>
       </div>
       <div className="main">
-        <NewsFeed articles={sampleNews} />
+        <LiveOfficial live={live} loading={liveLoading} saved={liveSaved} />
         <ChatPanel
           locationLabel={location.label}
           onOpen={(q) => router.push(q ? `/chat?q=${encodeURIComponent(q)}` : "/chat")}
