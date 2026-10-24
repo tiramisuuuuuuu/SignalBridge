@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { pushToSpacetime } from "./stdb.js";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -61,7 +62,7 @@ function present(p: EmergencyPacket, asOfMinutes = 0) {
   };
 }
 
-async function runSync() {
+async function runSyncCore() {
   lastAttemptAt = new Date().toISOString();
   const { packet, failures } = await collectPacket(latest());
   if (!packet) {
@@ -192,3 +193,10 @@ app.listen(PORT, () => {
       .catch((e: any) => console.log("Initial sync error:", e));
   }, 1500);
 });
+
+// Wraps the real sync so every successful sync also updates SpacetimeDB.
+async function runSync() {
+  const result: any = await runSyncCore();
+  if (result?.ok) void pushToSpacetime(result.packet, result.changes ?? []);
+  return result;
+}
