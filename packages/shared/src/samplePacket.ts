@@ -10,19 +10,19 @@ export const samplePacket: EmergencyPacket = {
     {
       id: "county-emergency",
       name: "County Emergency Management",
-      url: "http://localhost:3001/county-emergency/",
+      url: "http://localhost:4010/county-emergency/",
       lastSuccessfulFetchAt: "2026-10-24T22:10:00Z",
     },
     {
       id: "shelter-status",
       name: "Shelter Status Page",
-      url: "http://localhost:3001/shelter-status/",
+      url: "http://localhost:4010/shelter-status/",
       lastSuccessfulFetchAt: "2026-10-24T22:10:00Z",
     },
     {
       id: "transportation-alerts",
       name: "Transportation Alerts",
-      url: "http://localhost:3001/transportation-alerts/",
+      url: "http://localhost:4010/transportation-alerts/",
       lastSuccessfulFetchAt: "2026-10-24T22:10:00Z",
     },
   ],
