@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { registerVoice } from "./voice.js";
 import { pushToSpacetime } from "./stdb.js";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -81,6 +82,7 @@ async function runSyncCore() {
 const app = express();
 app.use(cors());
 app.use(express.json());
+registerVoice(app);
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, packets: history.length }));
 
@@ -181,6 +183,7 @@ app.post("/api/agents/assist", (req, res) => {
   res.json({ request: text, ...recommend(p, parseRequest(text)) });
 });
 
+try { process.loadEnvFile(path.join(ROOT, ".env")); } catch {}
 await load();
 app.listen(PORT, () => {
   console.log(`SignalBridge API on http://localhost:${PORT}`);
