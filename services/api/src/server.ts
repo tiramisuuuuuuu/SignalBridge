@@ -101,10 +101,17 @@ app.post("/api/sync", async (_req, res) => {
         failures: result.failures,
       });
     }
+    // The client sends the version it holds offline. Return everything
+    // that changed since that version, not just since the last sync.
+    const cv = Number(req.body?.clientVersion);
+    const base = Number.isFinite(cv) ? history.find((h) => h.version === cv) : undefined;
+    const changes = base ? diffPackets(base, result.packet) : result.changes;
     res.json({
       accepted: true,
+      previousVersion: base ? base.version : (history.length > 1 ? history[history.length - 2].version : null),
+      newVersion: result.packet.version,
       packet: present(result.packet),
-      changes: result.changes,
+      changes,
       failures: result.failures,
     });
   } catch (err) {
@@ -138,6 +145,16 @@ app.get("/api/evidence/:id", async (req, res) => {
     if (existsSync(`${base}.png`)) return res.type("image/png").sendFile(`${base}.png`);
   }
   res.status(404).json({ error: "No evidence with that id" });
+});
+
+app.get("/api/packets", (_req, res) => {
+  res.json(history.map((p) => ({ version: p.version, downloadedAt: p.downloadedAt })));
+});
+
+app.get("/api/packets/:version", (req, res) => {
+  const p = history.find((h) => h.version === Number(req.params.version));
+  if (!p) return res.status(404).json({ error: "No such version" });
+  res.json(p);
 });
 
 await load();
