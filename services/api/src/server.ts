@@ -3,7 +3,7 @@ import cors from "cors";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { EmergencyPacket } from "@signalbridge/shared";
+import { getFreshness, ageMinutes, type EmergencyPacket } from "@signalbridge/shared";
 import { ROOT, collectPacket, diffPackets } from "./collect.js";
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -11,6 +11,9 @@ const DATA_FILE = path.join(ROOT, "services/api/data/packets.json");
 
 let history: EmergencyPacket[] = [];
 let syncing: Promise<unknown> | null = null;
+let lastAttemptAt: string | null = null;
+let lastSyncFailed = false;
+let lastFailures: unknown[] = [];
 
 async function load() {
   try {
@@ -25,11 +28,46 @@ async function save() {
 }
 const latest = () => history[history.length - 1] ?? null;
 
+// Adds freshness info. Never deletes old data.
+// ?asOfMinutes=45 simulates time passing (demo only).
+function present(p: EmergencyPacket, asOfMinutes = 0) {
+  const now = new Date(Date.now() + asOfMinutes * 60000);
+  const shelters = p.shelters.map((s) => ({
+    id: s.id,
+    freshness: getFreshness(s.observedAt, s.staleAfterMinutes, now),
+    ageMinutes: Math.round(ageMinutes(s.observedAt, now)),
+    sourceAgeMinutes: s.sourceUpdatedAt ? Math.round(ageMinutes(s.sourceUpdatedAt, now)) : null,
+  }));
+  const roads = p.roadClosures.map((r) => ({
+    id: r.id,
+    freshness: getFreshness(r.observedAt, 30, now),
+    ageMinutes: Math.round(ageMinutes(r.observedAt, now)),
+  }));
+  const anyStale = [...shelters, ...roads].some((x) => x.freshness === "stale");
+
+  let syncStatus: EmergencyPacket["syncStatus"] = anyStale ? "stale" : "fresh";
+  if (lastSyncFailed) syncStatus = "failed";
+
+  return {
+    ...p,
+    syncStatus,
+    lastSyncAttemptAt: lastAttemptAt ?? p.lastSyncAttemptAt,
+    lastKnownPacket: lastSyncFailed,
+    freshness: { shelters, roadClosures: roads },
+    failures: lastSyncFailed ? lastFailures : [],
+  };
+}
+
 async function runSync() {
+  lastAttemptAt = new Date().toISOString();
   const { packet, failures } = await collectPacket(latest());
   if (!packet) {
+    lastSyncFailed = true;
+    lastFailures = failures;
     return { ok: false as const, failures };
   }
+  lastSyncFailed = false;
+  lastFailures = failures;
   const changes = diffPackets(latest(), packet);
   history.push(packet); // previous packets are kept for history
   await save();
@@ -42,10 +80,11 @@ app.use(express.json());
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, packets: history.length }));
 
-app.get("/api/packet", (_req, res) => {
+app.get("/api/packet", (req, res) => {
   const p = latest();
   if (!p) return res.status(404).json({ error: "No packet yet. Call POST /api/sync." });
-  res.json(p);
+  const asOf = Number(req.query.asOfMinutes ?? 0) || 0;
+  res.json(present(p, asOf));
 });
 
 app.post("/api/sync", async (_req, res) => {
@@ -53,25 +92,28 @@ app.post("/api/sync", async (_req, res) => {
     if (!syncing) syncing = runSync().finally(() => (syncing = null));
     const result: any = await syncing;
     if (!result.ok) {
+      const p = latest();
       // Do not delete old data when a refresh fails.
       return res.status(502).json({
         syncStatus: "failed",
-        lastKnownPacket: latest() !== null,
-        packet: latest(),
+        lastKnownPacket: p !== null,
+        packet: p ? present(p) : null,
         failures: result.failures,
       });
     }
     res.json({
       accepted: true,
-      packet: result.packet,
+      packet: present(result.packet),
       changes: result.changes,
       failures: result.failures,
     });
   } catch (err) {
+    lastSyncFailed = true;
+    const p = latest();
     res.status(500).json({
       syncStatus: "failed",
-      lastKnownPacket: latest() !== null,
-      packet: latest(),
+      lastKnownPacket: p !== null,
+      packet: p ? present(p) : null,
       error: String(err),
     });
   }
