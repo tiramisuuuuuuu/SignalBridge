@@ -1,5 +1,10 @@
 {
   "name": "signalbridge",
   "private": true,
-  "workspaces": ["apps/*", "services/*", "packages/*"]
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*",
+    "actors/*"
+  ]
 }

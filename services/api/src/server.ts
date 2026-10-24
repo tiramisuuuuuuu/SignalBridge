@@ -181,4 +181,14 @@ app.post("/api/agents/assist", (req, res) => {
 });
 
 await load();
-app.listen(PORT, () => console.log(`SignalBridge API on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`SignalBridge API on http://localhost:${PORT}`);
+  // Fresh start: build the first packet so GET /api/packet is never empty.
+  setTimeout(() => {
+    console.log("Running startup sync...");
+    if (!syncing) syncing = runSync().finally(() => (syncing = null));
+    syncing
+      .then((r: any) => console.log(r?.ok ? "Initial sync done" : "Initial sync failed"))
+      .catch((e: any) => console.log("Initial sync error:", e));
+  }, 1500);
+});
