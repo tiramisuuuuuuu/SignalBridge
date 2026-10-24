@@ -34,7 +34,7 @@ async def handle(text: str) -> str:
 
     lines.extend(r["notes"])
     lines.append(r["disclaimer"])
-    return "\n".join(lines)
+    return "\n\n".join(lines)
 
 
 if __name__ == "__main__":
