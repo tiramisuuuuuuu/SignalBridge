@@ -90,7 +90,7 @@ app.get("/api/packet", (req, res) => {
   res.json(present(p, asOf));
 });
 
-app.post("/api/sync", async (_req, res) => {
+app.post("/api/sync", async (req, res) => {
   try {
     if (!syncing) syncing = runSync().finally(() => (syncing = null));
     const result: any = await syncing;
