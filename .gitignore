@@ -5,3 +5,5 @@ dist/
 .DS_Store
 storage/
 services/api/data/
+.venv/
+__pycache__/
