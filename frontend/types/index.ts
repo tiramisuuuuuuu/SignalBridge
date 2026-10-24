@@ -37,3 +37,13 @@ export interface UserLocation {
   lng?: number;
   radiusMiles: number;
 }
+
+export interface ChatSource { name: string; url: string; updatedAt: string; distanceMiles?: number }
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  createdAt: string;
+  sources?: ChatSource[];
+  warning?: string; // uncertainty note
+}
