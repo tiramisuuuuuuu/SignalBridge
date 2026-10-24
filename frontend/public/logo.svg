@@ -1,0 +1,6 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Emergency shelter chatbot</title>
+  <desc>A monoline megaphone broadcasting an emergency update</desc>
+  <path d="M35 57L78 39V89L35 71V57ZM35 57H27C22.03 57 18 61.03 18 66C18 70.97 22.03 75 27 75H35M43 75L49 95H65L56 80" stroke="#102B36" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M89 52C96 59 96 69 89 76M98 42C111 55 111 73 98 86" stroke="#102B36" stroke-width="6" stroke-linecap="round"/>
+</svg>
