@@ -15,6 +15,14 @@ export const sampleAlerts: LiveAlert[] = [
     description: "Expected reopening: unknown.",
     latitude: 37.25, longitude: -122.05, distanceMiles: 15, sourceName: "Caltrans",
     sourceUrl: "https://example.com", updatedAt: ago(12) },
+  // { id: "r-3", category: "road_closure", severity: "medium", title: "Route 9 closed in both directions",
+  //   description: "Expected reopening: unknown.",
+  //   latitude: 37.25, longitude: -122.05, distanceMiles: 15, sourceName: "Caltrans",
+  //   sourceUrl: "https://example.com", updatedAt: ago(12) },
+  // { id: "d-2", category: "road_closure", severity: "medium", title: "Route 9 closed in both directions",
+  //   description: "Expected reopening: unknown.",
+  //   latitude: 37.25, longitude: -122.05, distanceMiles: 15, sourceName: "Caltrans",
+  //   sourceUrl: "https://example.com", updatedAt: ago(12) },
 ];
 
 const img = (seed: string) => `https://picsum.photos/seed/${seed}/900/500`;

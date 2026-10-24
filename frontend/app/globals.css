@@ -25,7 +25,27 @@ button{font:inherit;cursor:pointer;color:inherit}
 .header .radius{margin-left:auto}
 .loc{background:none;border:1px solid var(--line);border-radius:999px;padding:.3rem .8rem}
 
-.alerts{display:flex;gap:.75rem;overflow-x:auto;padding:1rem 0;scroll-snap-type:x proximity}
+.alerts {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding: 1rem 0 0.6rem;
+  scroll-snap-type: x proximity;
+
+  /* Smooth scrolling */
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: #b8c9c6 transparent;
+  margin-bottom: 0.6rem;
+}
+
+/* Chrome, Edge, Safari */
+.alerts::-webkit-scrollbar {
+  height: 5px;
+}
 .alert{flex:0 0 280px;scroll-snap-align:start;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--medium);border-radius:var(--radius);padding:.8rem 1rem}
 .alert.sev-high{border-left-color:var(--high)}.alert.sev-low{border-left-color:var(--low)}
 .alert-top{display:flex;justify-content:space-between;font-size:.85rem;font-weight:600}
