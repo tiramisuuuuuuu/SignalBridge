@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
 import { createHash } from "node:crypto";
 
@@ -5,6 +6,24 @@ import { createHash } from "node:crypto";
 const cache = new Map<string, Buffer>();
 
 export function registerVoice(app: Express) {
+  // Short-lived Cartesia access token (speech-to-text only) so the browser never sees the API key.
+  app.post("/api/voice/token", async (_req, res) => {
+    const key = process.env.CARTESIA_API_KEY;
+    if (!key) return res.status(503).json({ error: "Voice not configured" });
+    try {
+      const r = await fetch("https://api.cartesia.ai/access-token", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Cartesia-Version": "2026-03-01", "Content-Type": "application/json" },
+        body: JSON.stringify({ grants: { stt: true }, expires_in: 600 }),
+      });
+      const d: any = await r.json().catch(() => ({}));
+      if (!r.ok || !d.token) return res.status(502).json({ error: d?.message ?? d?.error ?? `Cartesia HTTP ${r.status}` });
+      res.json({ token: d.token, expiresIn: 600 });
+    } catch (e) {
+      res.status(502).json({ error: String(e) });
+    }
+  });
+
   app.post("/api/voice", async (req, res) => {
     const text = String(req.body?.text ?? "").trim();
     if (!text) return res.status(400).json({ error: "text is required" });

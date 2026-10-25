@@ -41,12 +41,12 @@ function offlineAnswer(loc: UserLocation | null): ChatReply {
   };
 }
 
-export async function askChat(history: ChatTurn[], loc: UserLocation | null): Promise<ChatReply> {
+export async function askChat(history: ChatTurn[], loc: UserLocation | null, mode: "text" | "voice" = "text"): Promise<ChatReply> {
   try {
     const r = await fetch(`${API}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: history, context: context(loc) }),
+      body: JSON.stringify({ messages: history, context: context(loc), mode }),
       signal: AbortSignal.timeout(100000),
     });
     const d = await r.json().catch(() => ({}));

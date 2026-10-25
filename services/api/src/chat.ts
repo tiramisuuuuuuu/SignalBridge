@@ -32,6 +32,15 @@ Nearby essentials from OpenStreetMap (JSON with exact coordinates, may be empty)
 ${places}`;
 }
 
+const VOICE_STYLE = `
+
+VOICE MODE: your reply will be spoken out loud by a voice assistant called "Bridge".
+- Reply in 1 to 3 short, natural, conversational sentences (under 60 words).
+- No bullet points, no lists, no URLs, no markdown.
+- Say place names and distances naturally (still wrap places in {{place|...}} tokens).
+- If you need one detail to help, ask one short question.
+- Be calm and reassuring; give the single most useful next step.`;
+
 export function registerChat(app: Express) {
   app.post("/api/chat", async (req, res) => {
     const key = process.env.ANTHROPIC_API_KEY;
@@ -49,8 +58,8 @@ export function registerChat(app: Express) {
     const base = {
       model: MODEL,
       max_tokens: 2000,
-      system: systemPrompt(req.body?.context),
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
+      system: systemPrompt(req.body?.context) + (req.body?.mode === "voice" ? VOICE_STYLE : ""),
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: req.body?.mode === "voice" ? 2 : 4 }],
     };
 
     try {
