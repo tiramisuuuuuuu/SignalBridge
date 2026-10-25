@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import { registerVoice } from "./voice.js";
 import { registerLive } from "./live.js";
+import { registerUpdates } from "./updates.js";
+import { registerPlaces } from "./places.js";
 import { pushToSpacetime } from "./stdb.js";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -85,6 +87,8 @@ app.use(cors());
 app.use(express.json());
 registerVoice(app);
 registerLive(app);
+registerUpdates(app);
+registerPlaces(app);
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, packets: history.length }));
 

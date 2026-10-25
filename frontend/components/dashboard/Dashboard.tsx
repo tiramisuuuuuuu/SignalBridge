@@ -5,7 +5,11 @@ import type { UserLocation } from "@/types";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
 import AlertsRow from "@/components/alerts/AlertsRow";
-import LiveOfficial from "@/components/live/LiveOfficial";
+import LiveTicker from "@/components/updates/LiveTicker";
+import UpdatesFeed from "@/components/updates/UpdatesFeed";
+import { loadUpdates, loadCachedUpdates, type UpdatesData } from "@/lib/updates";
+import { loadPlaces, loadCachedPlaces, loadLastPlaces, type PlacesData } from "@/lib/places";
+import SignalMap, { type MapPoint } from "@/components/map/SignalMap";
 import ChatPanel from "@/components/chat/ChatPanel";
 import { loadCachedPacket, loadPacket, syncPacket, packetToAlerts, describeChange, loadLive, loadCachedLive, type Packet, type Change, type LiveData } from "@/lib/api";
 
@@ -21,6 +25,52 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
   const [syncing, setSyncing] = useState(false);
   const [changes, setChanges] = useState<Change[]>([]);
   const versionRef = useRef<number | undefined>(undefined);
+  // Exact device location stays on this device; the backend only gets ~1 km rounded coordinates.
+  const [gps, setGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<"pending" | "granted" | "denied" | "unavailable">("pending");
+  const [useGpsMode, setUseGpsMode] = useState(true);
+  const prevLabel = useRef(location.label);
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) { setGpsStatus("unavailable"); return; }
+    const get = () => navigator.geolocation.getCurrentPosition(
+      (pos) => { setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }); setGpsStatus("granted"); },
+      (err) => setGpsStatus(err.code === err.PERMISSION_DENIED ? "denied" : "unavailable"),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+    get();
+    const t = setInterval(get, 5 * 60_000);
+    return () => clearInterval(t);
+  }, []);
+  // Picking a city in the header switches to that city; "Use my current location" switches back.
+  useEffect(() => {
+    if (location.label !== prevLabel.current) { prevLabel.current = location.label; setUseGpsMode(false); }
+  }, [location.label]);
+  const gpsActive = useGpsMode && gpsStatus === "granted" && !!gps;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const updatesLoc = gpsActive && gps ? { ...location, label: "Your location", lat: r2(gps.lat), lng: r2(gps.lng) } : location;
+  const [updates, setUpdates] = useState<UpdatesData | null>(null);
+  const [updatesSaved, setUpdatesSaved] = useState(false);
+  const [updatesLoading, setUpdatesLoading] = useState(false);
+  const [updatesError, setUpdatesError] = useState<string | null>(null);
+
+  // Worldwide live updates for the chosen location; refresh every 2 minutes, saved for offline.
+  useEffect(() => {
+    let alive = true;
+    const saved = loadCachedUpdates(updatesLoc.label);
+    setUpdates(saved);
+    setUpdatesSaved(!!saved);
+    const run = () => {
+      setUpdatesLoading(true);
+      loadUpdates(updatesLoc)
+        .then((d) => { if (alive) { setUpdates(d); setUpdatesSaved(false); setUpdatesError(null); } })
+        .catch((e) => { if (alive) setUpdatesError(String(e?.message ?? e)); })
+        .finally(() => { if (alive) setUpdatesLoading(false); });
+    };
+    run();
+    const t = setInterval(run, 2 * 60_000);
+    return () => { alive = false; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updatesLoc.label, updatesLoc.lat, updatesLoc.lng]);
   const [live, setLive] = useState<LiveData | null>(null);
   const [liveSaved, setLiveSaved] = useState(false);
   const [liveLoading, setLiveLoading] = useState(false);
@@ -37,6 +87,21 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
       .finally(() => setLiveLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.label, location.lat, location.lng]);
+
+  const mapCenter = gpsActive && gps ? { lat: gps.lat, lng: gps.lng }
+    : updates?.place ? { lat: updates.place.lat, lng: updates.place.lng } : null;
+  const [places, setPlaces] = useState<PlacesData | null>(null);
+  const pk = mapCenter ? `${mapCenter.lat.toFixed(2)},${mapCenter.lng.toFixed(2)}` : "";
+  useEffect(() => { setPlaces((cur) => cur ?? loadLastPlaces()); }, []);
+  useEffect(() => {
+    if (!pk) return;
+    let alive = true;
+    const [la, lo] = pk.split(",").map(Number);
+    const saved = loadCachedPlaces(la, lo);
+    if (saved) setPlaces(saved);
+    loadPlaces(la, lo, 5).then((d) => { if (alive) setPlaces(d); }).catch(() => { /* keep saved */ });
+    return () => { alive = false; };
+  }, [pk]);
 
   const apply = useCallback((p: Packet | null) => {
     if (!p) return;
@@ -74,6 +139,21 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
   const geoLoc = live?.place ? { ...location, lat: live.place.lat, lng: live.place.lng } : location;
   const alerts = packetToAlerts(packet, geoLoc);
 
+  const statusColor = (st: string) => (st === "open" ? "#3fb950" : st === "full" || st === "closed" ? "#f85149" : "#e0a800");
+  const mapPoints: MapPoint[] = [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(packet?.shelters ?? []).map((s: any) => ({
+      lat: s.latitude, lng: s.longitude, color: statusColor(s.status),
+      title: `${s.name} (demo)`,
+      detail: `Status: ${String(s.status).toUpperCase()}${s.capacity != null ? ` · Capacity ${s.capacity}` : ""}`,
+    })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(live?.shelters ?? []).filter((s: any) => s.latitude != null).map((s: any) => ({
+      lat: s.latitude, lng: s.longitude, color: "#58a6ff",
+      title: s.name, detail: `FEMA open shelter · ${s.address}`,
+    })),
+  ];
+
   return (
     <div className="shell">
       <Header location={location} onChange={onChangeLocation} />
@@ -92,12 +172,26 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
           <button onClick={() => setChanges([])} style={{ padding: "0.3rem 0.7rem", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: "inherit", cursor: "pointer" }}>Dismiss</button>
         </div>
       )}
-      <AlertsRow alerts={alerts} />
+      <LiveTicker data={updates} loading={updatesLoading} saved={updatesSaved} />
       <div style={{ margin: "0 1rem" }}>
         <button onClick={refresh} disabled={syncing} style={{ padding: "0.45rem 0.9rem", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface)", color: "inherit", cursor: "pointer", opacity: syncing ? 0.6 : 1 }}>{syncing ? "Checking…" : "Check for updates"}</button>
+          {!gpsActive && gpsStatus === "granted" && (
+            <button onClick={() => setUseGpsMode(true)}
+              style={{ marginLeft: "0.5rem", padding: "0.45rem 0.9rem", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface)", color: "inherit", cursor: "pointer" }}>
+              📍 Use my current location
+            </button>
+          )}
+          {gpsStatus === "denied" && <span className="muted small" style={{ marginLeft: "0.75rem" }}>Location access denied, so showing {location.label}.</span>}
       </div>
       <div className="main">
-        <LiveOfficial live={live} loading={liveLoading} saved={liveSaved} />
+        <div>
+          <SignalMap me={mapCenter} accuracy={gpsActive ? gps?.accuracy : undefined} isGps={gpsActive} places={places?.places ?? []} showPlaces={offline} />
+          <UpdatesFeed data={updates} loading={updatesLoading} saved={updatesSaved} error={updatesError} query={location.label} />
+          <div style={{ marginTop: "1.5rem" }}>
+            <h3 style={{ fontSize: "1rem", margin: "0 0 0.5rem" }}>Demo scenario (simulated data)</h3>
+            <AlertsRow alerts={alerts} />
+          </div>
+        </div>
         <ChatPanel
           locationLabel={location.label}
           onOpen={(q) => router.push(q ? `/chat?q=${encodeURIComponent(q)}` : "/chat")}
