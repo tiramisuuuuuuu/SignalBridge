@@ -30,8 +30,11 @@ export default function UpdatesFeed({ data, loading, saved, error, query }: {
   const [filter, setFilter] = useState("all");
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
+  if (error && /^422/.test(error)) {
+    return <section style={{ ...card, borderLeft: "4px solid var(--high)" }}>SignalBridge covers <strong>California only</strong> for now. Choose a California city, for example San Francisco, Los Angeles, Sacramento, or Fresno.</section>;
+  }
   if (error && /^404/.test(error)) {
-    return <section style={{ ...card, borderLeft: "4px solid var(--high)" }}>Couldn&apos;t find &quot;{query}&quot;. Check the spelling and try again.</section>;
+    return <section style={{ ...card, borderLeft: "4px solid var(--high)" }}>Couldn&apos;t find &quot;{query}&quot; in California. Check the spelling and try again.</section>;
   }
   if (!data) {
     return <section style={card} className="muted">{loading ? "Checking official sources for your area…" : "Live updates unavailable right now."}</section>;

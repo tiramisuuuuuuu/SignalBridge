@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
-import { UA, miles } from "./live.js";
+import { UA, miles, inCalifornia } from "./live.js";
 
 // Essentials near a point, worldwide, from OpenStreetMap (Overpass API):
 // medical, pharmacies, grocery/supplies, shelters/assembly points, fire/police.
@@ -53,6 +53,7 @@ export function registerPlaces(app: Express) {
   app.get("/api/places", async (req, res) => {
     const lat = Number(req.query.lat), lng = Number(req.query.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Pass ?lat=..&lng=.." });
+    if (!inCalifornia(lat, lng)) return res.status(422).json({ error: "SignalBridge covers California only for now.", outsideCalifornia: true });
     const radius = Math.min(Math.max(Number(req.query.radius) || 5, 1), 50);
     const perCat = Math.min(Math.max(Number(req.query.limit) || PER_CATEGORY, 10), 300);
     const la = Math.round(lat * 100) / 100, lo = Math.round(lng * 100) / 100; // ~1 km, privacy

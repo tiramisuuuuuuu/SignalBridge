@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Express } from "express";
-import { UA, geocode, miles, nwsAlerts, femaShelters } from "./live.js";
+import { UA, geocode, miles, nwsAlerts, femaShelters, inCalifornia, OutsideCalifornia } from "./live.js";
 
 // Worldwide live updates for a location, merged from official/public sources.
 // Every item keeps its source name, original link, timestamp, and a list of key facts.
@@ -79,7 +79,7 @@ async function gdacs(lat: number, lng: number, radius: number): Promise<Update[]
     const [lo, la] = f.geometry?.type === "Point" ? f.geometry.coordinates : [null, null];
     const dist = la != null ? miles(lat, lng, la, lo) : null;
     const severity = GDACS_SEV[p.alertlevel] ?? "low";
-    if (dist != null && dist > radius && severity !== "high") continue; // nearby, plus major events anywhere
+    if (dist == null || dist > radius) continue; // nearby events only
     out.push({
       id: `gdacs-${key}`,
       category: p.eventtype === "EQ" ? "earthquake" : p.eventtype === "WF" ? "wildfire" : "disaster",
@@ -403,8 +403,10 @@ export function registerUpdates(app: Express) {
       else if (req.query.place) place = await geocode(String(req.query.place));
       else return res.status(400).json({ error: "Pass ?place=City or ?lat=..&lng=.." });
     } catch (err) {
+      if (err instanceof OutsideCalifornia) return res.status(422).json({ error: err.message, outsideCalifornia: true });
       return res.status(404).json({ error: String(err).replace(/^Error: /, "") });
     }
+    if (!inCalifornia(place.lat, place.lng)) return res.status(422).json({ error: new OutsideCalifornia().message, outsideCalifornia: true });
 
     const key = `${place.lat.toFixed(2)},${place.lng.toFixed(2)},${radius}`;
     const hit = cache.get(key);

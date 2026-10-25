@@ -6,7 +6,7 @@ import { mkdir, readdir, rename, stat, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { UA } from "./live.js";
+import { UA, inCalifornia } from "./live.js";
 
 // Offline map areas cut from the Protomaps OpenStreetMap basemap (ODbL, OSM attribution required).
 // PROTOTYPE NOTE: this reads directly from Protomaps' daily builds. For production, copy the
@@ -56,6 +56,7 @@ export function registerOffline(app: Express) {
   app.get("/api/offline-map", async (req, res) => {
     const lat = Number(req.query.lat), lng = Number(req.query.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Pass ?lat=..&lng=.." });
+    if (!inCalifornia(lat, lng)) return res.status(422).json({ error: "SignalBridge covers California only for now.", outsideCalifornia: true });
     const la = Math.round(lat * 10) / 10, lo = Math.round(lng * 10) / 10; // ~7 mile grid: shared cache + privacy
     const id = `${la}_${lo}`;
     const region = { file: path.join(DIR, `${id}-region.pmtiles`), box: bbox(la, lo, 55), maxzoom: 12 };

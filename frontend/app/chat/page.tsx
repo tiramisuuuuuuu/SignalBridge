@@ -194,7 +194,7 @@ function ChatInner() {
         <button onClick={() => router.push("/")} style={pill}>← Home</button>
         <div>
           <strong>Ask SignalBridge</strong>
-          <div className="muted small">Searches trusted sources{loc?.label ? ` · ${loc.label}` : ""} · History clears when you leave</div>
+          <div className="muted small">Searches trusted California sources{loc?.label ? ` · ${loc.label}` : ""} · History clears when you leave</div>
         </div>
       </div>
 
@@ -248,7 +248,7 @@ function ChatInner() {
       </form>
       {micError && <p className="small" style={{ color: "var(--high)", margin: "0 0 0.5rem" }}>{micError}</p>}
       <p className="muted small" style={{ margin: "0 0 1rem" }}>
-        In immediate danger? Contact local emergency services (911 US/Canada · 112 EU · 999 UK). Answers can be wrong; check the linked sources.
+        In immediate danger? Call 911. Answers can be wrong; check the linked sources.
       </p>
     </div>
   );

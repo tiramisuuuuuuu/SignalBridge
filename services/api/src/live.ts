@@ -21,6 +21,24 @@ async function getJSON(url: string, headers: Record<string, string> = {}) {
   return r.json();
 }
 
+// SignalBridge covers California only (hackathon scope).
+export class OutsideCalifornia extends Error {
+  constructor() { super("SignalBridge covers California only for now."); }
+}
+// Simplified California outline (land border + offshore box), good enough for a coverage check.
+const CA: [number, number][] = [
+  [-125.0, 42.0], [-120.0, 42.0], [-120.0, 39.0], [-114.6, 35.0], [-114.1, 34.3],
+  [-114.5, 33.0], [-114.7, 32.7], [-117.1, 32.5], [-125.0, 32.5],
+];
+export function inCalifornia(lat: number, lng: number) {
+  let inside = false;
+  for (let i = 0, j = CA.length - 1; i < CA.length; j = i++) {
+    const [xi, yi] = CA[i], [xj, yj] = CA[j];
+    if ((yi > lat) !== (yj > lat) && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 export async function geocode(place: string): Promise<Place> {
   const key = place.trim().toLowerCase();
   const hit = geoCache.get(key);
@@ -28,9 +46,11 @@ export async function geocode(place: string): Promise<Place> {
   const wait = 1100 - (Date.now() - lastGeocode); // Nominatim: max 1 request/second
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   lastGeocode = Date.now();
-  const url = `https://nominatim.openstreetmap.org/search?format=json&accept-language=en&limit=1&q=${encodeURIComponent(place)}`;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&accept-language=en&addressdetails=1&countrycodes=us&viewbox=-124.48,42.01,-114.13,32.53&bounded=1&limit=1&q=${encodeURIComponent(place)}`;
   const [first] = await getJSON(url);
-  if (!first) throw new Error(`Could not find "${place}"`);
+  if (!first) throw new Error(`Could not find "${place}" in California`);
+  const a = first.address ?? {};
+  if (a["ISO3166-2-lvl4"] !== "US-CA" && a.state !== "California") throw new OutsideCalifornia();
   const res = { label: String(first.display_name).split(",").slice(0, 3).join(",").trim(), lat: Number(first.lat), lng: Number(first.lon) };
   geoCache.set(key, res);
   return res;
