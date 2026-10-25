@@ -6,7 +6,7 @@ import type { Express } from "express";
 //   - FEMA Open Shelters: shelters open right now within a radius
 // Every item keeps its source name, URL and timestamp.
 
-const UA = `SignalBridge/0.1 (hackathon prototype; ${process.env.LIVE_CONTACT || "github.com/tiramisuuuuuuu/SignalBridge"})`;
+export const UA = `SignalBridge/0.1 (hackathon prototype; ${process.env.LIVE_CONTACT || "github.com/tiramisuuuuuuu/SignalBridge"})`;
 const TTL = 5 * 60_000;
 const FEMA = "https://gis.fema.gov/arcgis/rest/services/NSS/OpenShelters/FeatureServer/0/query";
 
@@ -21,22 +21,22 @@ async function getJSON(url: string, headers: Record<string, string> = {}) {
   return r.json();
 }
 
-async function geocode(place: string): Promise<Place> {
+export async function geocode(place: string): Promise<Place> {
   const key = place.trim().toLowerCase();
   const hit = geoCache.get(key);
   if (hit) return hit;
   const wait = 1100 - (Date.now() - lastGeocode); // Nominatim: max 1 request/second
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   lastGeocode = Date.now();
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=${encodeURIComponent(place)}`;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&accept-language=en&limit=1&q=${encodeURIComponent(place)}`;
   const [first] = await getJSON(url);
-  if (!first) throw new Error(`Could not find "${place}" in the US`);
+  if (!first) throw new Error(`Could not find "${place}"`);
   const res = { label: String(first.display_name).split(",").slice(0, 3).join(",").trim(), lat: Number(first.lat), lng: Number(first.lon) };
   geoCache.set(key, res);
   return res;
 }
 
-function miles(lat1: number, lon1: number, lat2: number, lon2: number) {
+export function miles(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 3958.8, rad = (d: number) => (d * Math.PI) / 180;
   const a = Math.sin(rad(lat2 - lat1) / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lon2 - lon1) / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
@@ -44,7 +44,7 @@ function miles(lat1: number, lon1: number, lat2: number, lon2: number) {
 
 const SEV: Record<string, string> = { Extreme: "high", Severe: "high", Moderate: "medium" };
 
-async function nwsAlerts(lat: number, lng: number) {
+export async function nwsAlerts(lat: number, lng: number) {
   // NWS rejects coordinates with more than 4 decimals.
   const url = `https://api.weather.gov/alerts/active?point=${lat.toFixed(4)},${lng.toFixed(4)}`;
   const data = await getJSON(url, { Accept: "application/geo+json" });
@@ -71,7 +71,7 @@ function pick(p: any, ...keys: string[]) {
   return null;
 }
 
-async function femaShelters(lat: number, lng: number, radius: number) {
+export async function femaShelters(lat: number, lng: number, radius: number) {
   const params = new URLSearchParams({
     where: "1=1", geometry: `${lng},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326",
     spatialRel: "esriSpatialRelIntersects", distance: String(radius), units: "esriSRUnit_StatuteMile",
