@@ -40,7 +40,7 @@ async function overpass(query: string) {
         method: "POST",
         headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ data: query }),
-        signal: AbortSignal.timeout(35000),
+        signal: AbortSignal.timeout(95000),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status} from ${new URL(url).host}`);
       return await r.json();
@@ -54,14 +54,15 @@ export function registerPlaces(app: Express) {
     const lat = Number(req.query.lat), lng = Number(req.query.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "Pass ?lat=..&lng=.." });
     const radius = Math.min(Math.max(Number(req.query.radius) || 5, 1), 50);
+    const perCat = Math.min(Math.max(Number(req.query.limit) || PER_CATEGORY, 10), 300);
     const la = Math.round(lat * 100) / 100, lo = Math.round(lng * 100) / 100; // ~1 km, privacy
-    const key = `${la},${lo},${radius}`;
+    const key = `${la},${lo},${radius},${perCat}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < TTL) return res.json({ ...hit.data, cached: true });
 
     const m = Math.round(radius * 1609);
     const parts = FILTERS.flatMap((f) => [`node${f}(around:${m},${la},${lo});`, `way${f}(around:${m},${la},${lo});`]).join("");
-    const query = `[out:json][timeout:30];(${parts});out center tags 3000;`;
+    const query = `[out:json][timeout:${radius > 20 ? 90 : 30}];(${parts});out center tags 3000;`;
     try {
       const d = await overpass(query);
       const byCat: Record<string, any[]> = {};
@@ -79,7 +80,7 @@ export function registerPlaces(app: Express) {
           osmUrl: `https://www.openstreetmap.org/${e.type}/${e.id}`,
         });
       }
-      const places = Object.values(byCat).flatMap((list) => list.sort((a, b) => a.distanceMiles - b.distanceMiles).slice(0, PER_CATEGORY));
+      const places = Object.values(byCat).flatMap((list) => list.sort((a, b) => a.distanceMiles - b.distanceMiles).slice(0, perCat));
       const data = { center: { lat: la, lng: lo }, radiusMiles: radius, fetchedAt: new Date().toISOString(), places, source: "OpenStreetMap contributors (Overpass API)", errors: [] };
       cache.set(key, { at: Date.now(), data });
       res.json({ ...data, cached: false });

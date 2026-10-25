@@ -4,6 +4,8 @@ import { registerVoice } from "./voice.js";
 import { registerLive } from "./live.js";
 import { registerUpdates } from "./updates.js";
 import { registerPlaces } from "./places.js";
+import { registerChat } from "./chat.js";
+import { registerOffline } from "./offline.js";
 import { pushToSpacetime } from "./stdb.js";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -89,6 +91,8 @@ registerVoice(app);
 registerLive(app);
 registerUpdates(app);
 registerPlaces(app);
+registerChat(app);
+registerOffline(app);
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, packets: history.length }));
 

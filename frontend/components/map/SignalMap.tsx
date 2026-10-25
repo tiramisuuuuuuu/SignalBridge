@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
-import type { Map as LMap, LayerGroup } from "leaflet";
+import type { Map as LMap, LayerGroup, Layer, TileLayer } from "leaflet";
+import type { OfflineArea } from "@/lib/offline";
 import type { Place } from "@/lib/places";
 
 export const PLACE_META: Record<string, [string, string]> = {
@@ -44,18 +45,21 @@ function popup(p: Place, me: { lat: number; lng: number } | null) {
   return box;
 }
 
-export default function SignalMap({ me, accuracy, isGps, places, showPlaces }: {
+export default function SignalMap({ me, accuracy, isGps, places, showPlaces, offlineArea }: {
   me: { lat: number; lng: number } | null;
   accuracy?: number;
   isGps: boolean;
   places: Place[];
   showPlaces: boolean; // true when offline: show saved essentials
+  offlineArea?: OfflineArea | null;
 }) {
   const elRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LMap | null>(null);
   const layerRef = useRef<LayerGroup | null>(null);
   const LRef = useRef<typeof import("leaflet") | null>(null);
   const lastCenter = useRef("");
+  const tileRef = useRef<TileLayer | null>(null);
+  const pmLayers = useRef<Layer[]>([]);
   const [ready, setReady] = useState(false);
   const [enabled, setEnabled] = useState<Record<string, boolean>>({ medical: true, pharmacy: true, grocery: true, shelter: true, fire_police: true });
 
@@ -65,7 +69,7 @@ export default function SignalMap({ me, accuracy, isGps, places, showPlaces }: {
       if (cancelled || !elRef.current || mapRef.current) return;
       LRef.current = L;
       const map = L.map(elRef.current).setView([20, 0], 2);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map);
+      tileRef.current = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map);
       layerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
       setReady(true);
@@ -95,6 +99,39 @@ export default function SignalMap({ me, accuracy, isGps, places, showPlaces }: {
     if (me && c !== lastCenter.current) { lastCenter.current = c; map.setView([me.lat, me.lng], 14); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, sig]);
+
+  // Offline: draw the saved map (street detail near you, region beyond) instead of online tiles.
+  useEffect(() => {
+    const L = LRef.current, map = mapRef.current;
+    if (!ready || !L || !map) return;
+    let cancelled = false;
+    const clear = () => { pmLayers.current.forEach((l) => map.removeLayer(l)); pmLayers.current = []; };
+    if (showPlaces && offlineArea) {
+      (async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).L = L;
+        const [{ leafletLayer }, { PMTiles, FileSource }] = await Promise.all([import("protomaps-leaflet"), import("pmtiles")]);
+        if (cancelled) return;
+        clear();
+        if (tileRef.current) map.removeLayer(tileRef.current);
+        const flavor = window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        const archive = (blob: Blob, name: string) => new PMTiles(new FileSource(new File([blob], name)));
+        const [w, s2, e, n] = offlineArea.detailBbox.split(",").map(Number);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const region = leafletLayer({ url: archive(offlineArea.region, "region.pmtiles"), flavor, lang: "en", maxDataZoom: 12 } as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const detail = leafletLayer({ url: archive(offlineArea.detail, "detail.pmtiles"), flavor, lang: "en", maxDataZoom: 15, minZoom: 11, bounds: L.latLngBounds([s2, w], [n, e]) } as any);
+        region.addTo(map);
+        detail.addTo(map);
+        pmLayers.current = [region, detail];
+      })().catch((err) => console.warn("Offline map couldn't be drawn", err));
+    } else {
+      clear();
+      if (tileRef.current && !map.hasLayer(tileRef.current)) tileRef.current.addTo(map);
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, showPlaces, offlineArea?.id]);
 
   const count = (cat: string) => places.filter((p) => p.category === cat).length;
 

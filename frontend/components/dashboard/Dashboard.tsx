@@ -9,6 +9,8 @@ import LiveTicker from "@/components/updates/LiveTicker";
 import UpdatesFeed from "@/components/updates/UpdatesFeed";
 import { loadUpdates, loadCachedUpdates, type UpdatesData } from "@/lib/updates";
 import { loadPlaces, loadCachedPlaces, loadLastPlaces, type PlacesData } from "@/lib/places";
+import OfflineMaps from "@/components/offline/OfflineMaps";
+import type { OfflineArea } from "@/lib/offline";
 import SignalMap, { type MapPoint } from "@/components/map/SignalMap";
 import ChatPanel from "@/components/chat/ChatPanel";
 import { loadCachedPacket, loadPacket, syncPacket, packetToAlerts, describeChange, loadLive, loadCachedLive, type Packet, type Change, type LiveData } from "@/lib/api";
@@ -93,6 +95,7 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
   const mapCenter = gpsActive && gps ? { lat: gps.lat, lng: gps.lng }
     : updates?.place ? { lat: updates.place.lat, lng: updates.place.lng } : null;
   const [places, setPlaces] = useState<PlacesData | null>(null);
+  const [offlineArea, setOfflineArea] = useState<OfflineArea | null>(null);
   const pk = mapCenter ? `${mapCenter.lat.toFixed(2)},${mapCenter.lng.toFixed(2)}` : "";
   useEffect(() => { setPlaces((cur) => cur ?? loadLastPlaces()); }, []);
   useEffect(() => {
@@ -187,7 +190,8 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
       </div>
       <div className="main">
         <div>
-          <SignalMap me={mapCenter} accuracy={gpsActive ? gps?.accuracy : undefined} isGps={gpsActive} places={places?.places ?? []} showPlaces={offline} />
+          <SignalMap me={mapCenter} accuracy={gpsActive ? gps?.accuracy : undefined} isGps={gpsActive} places={offline && offlineArea?.places?.length ? offlineArea.places : (places?.places ?? [])} showPlaces={offline} offlineArea={offlineArea} />
+          <OfflineMaps center={mapCenter} online={!offline} onArea={setOfflineArea} />
           <UpdatesFeed data={updates} loading={updatesLoading} saved={updatesSaved} error={updatesError} query={location.label} />
           <div style={{ marginTop: "1.5rem" }}>
             <h3 style={{ fontSize: "1rem", margin: "0 0 0.5rem" }}>Demo scenario (simulated data)</h3>
