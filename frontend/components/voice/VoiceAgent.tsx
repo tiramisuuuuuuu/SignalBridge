@@ -14,7 +14,7 @@ const KEY = "signalbridge.handsfree";
 const WAKE = /\b(?:hey|hi|okay|ok|hay|a)[,.!\s]+(?:signal\s*)?bridge\b[,.!?\s]*/i;
 const STOP = /^(stop|cancel|never ?mind|good ?bye|bye|thanks?|thank you|that'?s all|that is all)\b/i;
 const READ = /^(please\s+)?(read( (it|that|this|the (last|previous) (answer|response)|again))?( out)?( loud| aloud)?( again)?|say (it|that) again|repeat (it|that))[.!?\s]*$/i;
-const FOLLOW_UP_MS = 15000;
+const FOLLOW_UP_MS = 60_000; // stays in conversation until 1 minute of silence
 
 export default function VoiceAgent() {
   const [phase, setPhase] = useState<Phase>("off");
@@ -56,11 +56,11 @@ export default function VoiceAgent() {
   }
   function interrupt() { stopSpeaking(); done.current?.(); }
 
-  function chime() {
+  function chime(freq = 880) {
     const ac = ctx.current;
     if (!ac) return;
     const o = ac.createOscillator(), g = ac.createGain();
-    o.frequency.value = 880; g.gain.value = 0.05;
+    o.frequency.value = freq; g.gain.value = 0.05;
     o.connect(g); g.connect(ac.destination);
     o.start(); o.stop(ac.currentTime + 0.12);
   }
@@ -146,7 +146,10 @@ export default function VoiceAgent() {
         if (msg.type === "turn.update") {
           const tr = msg.transcript ?? "";
           if (speaking.current) { if (/\b(stop|wait|hey bridge)\b/i.test(tr)) interrupt(); }
-          else if (Date.now() < awakeUntil.current || WAKE.test(tr)) setHeard(tr);
+          else if (Date.now() < awakeUntil.current) {
+            awakeUntil.current = Math.max(awakeUntil.current, Date.now() + FOLLOW_UP_MS); // still talking: keep listening
+            setHeard(tr);
+          } else if (WAKE.test(tr)) setHeard(tr);
         } else if (msg.type === "turn.end") {
           handleTurn(msg.transcript ?? "");
         } else if (msg.type === "error") {
@@ -212,7 +215,7 @@ export default function VoiceAgent() {
     };
     document.addEventListener("visibilitychange", onVis);
     const t = setInterval(() => {
-      if (phaseRef.current === "listening" && Date.now() > awakeUntil.current) setP("idle");
+      if (phaseRef.current === "listening" && Date.now() > awakeUntil.current) { setP("idle"); chime(440); }
     }, 1000);
     return () => {
       cancelled = true;
