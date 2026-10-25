@@ -17,6 +17,7 @@ export interface UpdateItem {
   sourceUrl: string;
   updatedAt: string | null;
   expiresAt?: string | null;
+  details?: string[];
 }
 export interface UpdatesData {
   place: { label: string; lat: number; lng: number };
