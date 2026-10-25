@@ -13,7 +13,7 @@ import OfflineMaps from "@/components/offline/OfflineMaps";
 import type { OfflineArea } from "@/lib/offline";
 import SignalMap, { type MapPoint } from "@/components/map/SignalMap";
 import ChatPanel from "@/components/chat/ChatPanel";
-import { loadCachedPacket, loadPacket, syncPacket, packetToAlerts, describeChange, loadLive, loadCachedLive, type Packet, type Change, type LiveData } from "@/lib/api";
+import { API, loadCachedPacket, loadPacket, syncPacket, packetToAlerts, describeChange, loadLive, loadCachedLive, type Packet, type Change, type LiveData } from "@/lib/api";
 
 const banner: CSSProperties = {
   margin: "0.5rem 1rem", padding: "0.6rem 0.9rem", borderRadius: 8,
@@ -154,6 +154,26 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
     };
   }, [apply, refresh]);
 
+  // Live push: the server announces changes the moment it detects them.
+  useEffect(() => {
+    let es: EventSource | null = null;
+    try { es = new EventSource(`${API}/api/events`); } catch { return; }
+    es.onmessage = (e) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let d: any;
+      try { d = JSON.parse(e.data); } catch { return; }
+      if (d.type !== "changes" || !d.changes?.length) return;
+      loadPacket().then((p) => {
+        apply(p);
+        setChanges(d.changes);
+        setOffline(false);
+        const text = (d.changes as Change[]).filter((c) => c.type === "shelter_status").map((c) => describeChange(c, p)).join(". ");
+        if (text) window.dispatchEvent(new CustomEvent("signalbridge:alert", { detail: `Heads up. ${text}.` }));
+      }).catch(() => {});
+    };
+    return () => es?.close();
+  }, [apply]);
+
   const geoLoc = live?.place ? { ...location, lat: live.place.lat, lng: live.place.lng } : location;
   const alerts = packetToAlerts(packet, geoLoc);
 
@@ -181,6 +201,7 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
           {packet?.downloadedAt ? ` from ${new Date(packet.downloadedAt).toLocaleTimeString()}` : ""}. It may be out of date.
         </div>
       )}
+      <LiveTicker data={updates} loading={updatesLoading} saved={updatesSaved || offline} />
       {changes.length > 0 && (
         <div style={{ ...banner, borderLeft: "4px solid var(--accent)" }}>
           <strong>Updated since your last check:</strong>
@@ -190,7 +211,6 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
           <button onClick={() => setChanges([])} style={{ padding: "0.3rem 0.7rem", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: "inherit", cursor: "pointer" }}>Dismiss</button>
         </div>
       )}
-      <LiveTicker data={updates} loading={updatesLoading} saved={updatesSaved || offline} />
       <div style={{ margin: "0 1rem" }}>
         <span className="muted small">{syncing || updatesLoading ? "Updating…" : "Updates automatically"}</span>
           {!gpsActive && gpsStatus !== "denied" && gpsStatus !== "unavailable" && (
