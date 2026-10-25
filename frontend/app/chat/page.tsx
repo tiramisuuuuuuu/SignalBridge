@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { UserLocation } from "@/types";
 import { loadLocation } from "@/lib/storage";
 import { askChat } from "@/lib/chat";
+import { speak, stopSpeaking } from "@/lib/voice";
 
 type Msg = { id: string; role: "user" | "assistant"; text: string; sources?: { name: string; url: string }[]; warning?: string };
 type Me = { lat: number; lng: number } | null;
@@ -89,6 +90,57 @@ function ChatInner() {
   const endRef = useRef<HTMLDivElement>(null);
   const msgsRef = useRef<Msg[]>([]);
   msgsRef.current = msgs;
+  const [listening, setListening] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+  const [srOk, setSrOk] = useState(true);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recRef = useRef<any>(null);
+  const voiceTurn = useRef(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const getSR = () => (typeof window === "undefined" ? null : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  useEffect(() => { setSrOk(!!getSR()); }, []);
+  // Leaving the chat stops speech and the mic.
+  useEffect(() => () => { stopSpeaking(); recRef.current?.abort?.(); }, []);
+
+  function toggleMic() {
+    if (listening) { recRef.current?.stop(); return; }
+    const SR = getSR();
+    if (!SR) { setMicError("Voice input isn't supported in this browser. Try Chrome, Edge or Safari."); return; }
+    stopSpeaking();
+    setSpeakingId(null);
+    const rec = new SR();
+    rec.lang = navigator.language || "en-US";
+    rec.interimResults = true;
+    rec.continuous = false;
+    let finalText = "";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
+      }
+      setInput((finalText + interim).trim()); // words appear live in the text box
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onerror = (e: any) => {
+      setMicError(e.error === "not-allowed" ? "Microphone permission was denied. Allow it in the address bar to use voice."
+        : e.error === "network" ? "Voice input needs an internet connection. You can still type."
+        : e.error === "no-speech" ? "Didn't catch that. Tap the mic and try again."
+        : `Voice input error: ${e.error}`);
+    };
+    rec.onend = () => {
+      setListening(false);
+      recRef.current = null;
+      const t = finalText.trim();
+      if (t) { voiceTurn.current = true; send(t); } // auto-send when you stop talking
+    };
+    recRef.current = rec;
+    setMicError(null);
+    setListening(true);
+    rec.start();
+  }
 
   useEffect(() => {
     setLoc(loadLocation());
@@ -112,8 +164,14 @@ function ChatInner() {
     setInput("");
     setBusy(true);
     const reply = await askChat(next.map((m) => ({ role: m.role, content: m.text })), loadLocation());
-    setMsgs((cur) => [...cur, { id: uid(), role: "assistant", text: reply.text, sources: reply.sources, warning: reply.warning }]);
+    const aid = uid();
+    setMsgs((cur) => [...cur, { id: aid, role: "assistant", text: reply.text, sources: reply.sources, warning: reply.warning }]);
     setBusy(false);
+    if (voiceTurn.current) {
+      voiceTurn.current = false;
+      setSpeakingId(aid);
+      speak(reply.text, () => setSpeakingId((cur) => (cur === aid ? null : cur)));
+    }
   }
 
   useEffect(() => {
@@ -160,6 +218,16 @@ function ChatInner() {
                 ))}
               </div>
             )}
+            {m.role === "assistant" && (
+              <button className="small"
+                onClick={() => {
+                  if (speakingId === m.id) { stopSpeaking(); setSpeakingId(null); }
+                  else { setSpeakingId(m.id); speak(m.text, () => setSpeakingId((cur) => (cur === m.id ? null : cur))); }
+                }}
+                style={{ marginTop: "0.5rem", background: "none", border: "1px solid var(--line)", borderRadius: 999, padding: "0.2rem 0.65rem", color: "inherit", cursor: "pointer" }}>
+                {speakingId === m.id ? "⏹ Stop" : "🔊 Read aloud"}
+              </button>
+            )}
             {m.warning && <div className="muted small" style={{ marginTop: "0.4rem" }}>⚠️ {m.warning}</div>}
           </div>
         ))}
@@ -169,10 +237,16 @@ function ChatInner() {
 
       <form onSubmit={(e) => { e.preventDefault(); send(input); }}
         style={{ position: "sticky", bottom: 0, display: "flex", gap: "0.5rem", padding: "0.75rem 0 1rem", background: "var(--bg, inherit)" }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type your question…" disabled={busy}
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={listening ? "Listening… speak now" : "Type your question…"} disabled={busy}
           style={{ flex: 1, padding: "0.75rem 1rem", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface)", color: "inherit" }} />
+        <button type="button" onClick={toggleMic} disabled={busy} aria-label="Voice input"
+          title={srOk ? (listening ? "Stop listening" : "Speak your question") : "Voice input isn't supported in this browser"}
+          style={{ ...pill, background: listening ? "var(--high)" : "var(--surface)", opacity: srOk ? 1 : 0.5 }}>
+          {listening ? "⏺ Listening…" : "🎙️"}
+        </button>
         <button type="submit" disabled={busy || !input.trim()} style={{ ...pill, background: "var(--accent)" }}>Send ➤</button>
       </form>
+      {micError && <p className="small" style={{ color: "var(--high)", margin: "0 0 0.5rem" }}>{micError}</p>}
       <p className="muted small" style={{ margin: "0 0 1rem" }}>
         In immediate danger? Contact local emergency services (911 US/Canada · 112 EU · 999 UK). Answers can be wrong; check the linked sources.
       </p>
