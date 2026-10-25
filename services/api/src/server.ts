@@ -1,8 +1,11 @@
 import express from "express";
 import cors from "cors";
+import { registerDemo } from "./demo.js";
+import { execFile } from "node:child_process";
+import { registerEvents, broadcast } from "./events.js";
 import { registerVoice } from "./voice.js";
-import { registerLive } from "./live.js";
-import { registerUpdates } from "./updates.js";
+import { registerLive, miles } from "./live.js";
+import { registerUpdates, setExtraUpdates } from "./updates.js";
 import { registerPlaces } from "./places.js";
 import { registerChat } from "./chat.js";
 import { registerOffline } from "./offline.js";
@@ -87,6 +90,7 @@ async function runSyncCore() {
 const app = express();
 app.use(cors());
 app.use(express.json());
+registerEvents(app);
 registerVoice(app);
 registerLive(app);
 registerUpdates(app);
@@ -211,5 +215,81 @@ app.listen(PORT, () => {
 async function runSync() {
   const result: any = await runSyncCore();
   if (result?.ok) void pushToSpacetime(result.packet, result.changes ?? []);
+  if (result?.ok && result.changes?.length) broadcast({ type: "changes", version: result.packet?.version, changes: result.changes });
   return result;
 }
+
+// Demo: keep checking the source pages so changes appear within seconds.
+setInterval(() => { if (!syncing) syncing = runSync().finally(() => (syncing = null)); }, Number(process.env.SYNC_INTERVAL_MS) || 15000);
+
+// Demo control: the fake county admin page flips Marina's status, then we check right away.
+app.post("/api/demo/marina", (req, res) => {
+  const status = req.body?.status === "full" ? "full" : "open";
+  const script = path.join(ROOT, "demo-sites", status === "full" ? "set-full.sh" : "set-open.sh");
+  execFile("bash", [script], { cwd: ROOT }, (err) => {
+    if (err) return res.status(500).json({ error: String(err) });
+    res.json({ ok: true, status });
+    if (!syncing) syncing = runSync().finally(() => (syncing = null));
+  });
+});
+
+// Demo scenario in Live updates: road closures (and when they clear), shelters only when full or closed.
+const DEMO_ROADS: Record<string, { lat: number; lng: number; near: string }> = { "highway-12": { lat: 38.29, lng: -122.46, near: "Sonoma" } };
+const roadSeen = new Map<string, any>(); // last known closed roads
+const roadCleared = new Map<string, { at: number; road: any }>();
+setExtraUpdates((lat, lng) => {
+  const p: any = latest();
+  if (!p) return [];
+  const src = (id: string) => (p.sources ?? []).find((s: any) => s.id === id);
+  const roadName = (r: any) => String(r.description ?? r.id).split(/\s+(?:closed|open|reopened)\b/i)[0] || r.id;
+  const out: any[] = [];
+
+  const closedNow = (p.roadClosures ?? []).filter((r: any) => String(r.status).toLowerCase() === "closed");
+  const closedIds = new Set(closedNow.map((r: any) => r.id));
+  for (const [id, r] of roadSeen) if (!closedIds.has(id)) { roadCleared.set(id, { at: Date.now(), road: r }); roadSeen.delete(id); }
+  for (const r of closedNow) { roadSeen.set(r.id, r); roadCleared.delete(r.id); }
+
+  const roadBase = (r: any) => {
+    const geo = DEMO_ROADS[r.id];
+    const s = src(r.sourceId);
+    return {
+      category: "road", where: geo?.near ?? "",
+      lat: geo?.lat ?? null, lng: geo?.lng ?? null,
+      distanceMiles: geo ? Math.round(miles(lat, lng, geo.lat, geo.lng)) : null,
+      sourceName: `${s?.name ?? "Transportation Alerts"} (demo)`, sourceUrl: s?.url ?? "",
+    };
+  };
+  for (const r of closedNow) {
+    const near = DEMO_ROADS[r.id]?.near;
+    out.push({ ...roadBase(r), id: `demo-road-${r.id}`, severity: "high",
+      title: `Full closure on ${roadName(r)}${near ? ` near ${near}` : ""}`,
+      summary: r.description ?? "Road closed", details: ["Status: closed", r.description].filter(Boolean),
+      updatedAt: r.observedAt ?? new Date().toISOString() });
+  }
+  for (const [id, c] of roadCleared) {
+    if (Date.now() - c.at > 30 * 60_000) { roadCleared.delete(id); continue; }
+    const near = DEMO_ROADS[id]?.near;
+    out.push({ ...roadBase(c.road), id: `demo-road-cleared-${id}`, severity: "low",
+      title: `Closure cleared: ${roadName(c.road)}${near ? ` near ${near}` : ""}`,
+      summary: "The road has reopened. Drive with caution and follow local instructions.", details: ["Status: open"],
+      updatedAt: new Date(c.at).toISOString() });
+  }
+
+  const open = (p.shelters ?? []).filter((s: any) => s.status === "open");
+  for (const sh of p.shelters ?? []) {
+    if (sh.status !== "full" && sh.status !== "closed") continue;
+    const alts = open.map((o: any) => `${o.name} (open${o.capacity != null ? `, ${o.capacity} beds` : ""})`).join(", ");
+    const s = src(sh.sourceId);
+    out.push({ id: `demo-shelter-${sh.id}`, category: "shelter", severity: "high",
+      title: `${sh.name} is ${String(sh.status).toUpperCase()}`,
+      summary: alts ? `No beds available. Nearby option: ${alts}.` : "No beds available.",
+      details: [`Status: ${sh.status}`, alts ? `Alternatives: ${alts}` : null].filter(Boolean),
+      where: "", lat: sh.latitude, lng: sh.longitude,
+      distanceMiles: sh.latitude != null ? Math.round(miles(lat, lng, sh.latitude, sh.longitude)) : null,
+      sourceName: `${s?.name ?? "Shelter Status"} (demo)`, sourceUrl: s?.url ?? "",
+      updatedAt: sh.sourceUpdatedAt ?? sh.observedAt });
+  }
+  return out;
+});
+
+registerDemo(app, ROOT, () => { if (!syncing) syncing = runSync().finally(() => (syncing = null)); });

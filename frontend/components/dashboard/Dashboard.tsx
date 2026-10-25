@@ -74,11 +74,13 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
     const t = setInterval(run, 2 * 60_000);
     const onVisible = () => { if (document.visibilityState === "visible") run(); };
     window.addEventListener("online", run);
+    window.addEventListener("signalbridge:refresh-updates", run);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
       clearInterval(t);
       window.removeEventListener("online", run);
+      window.removeEventListener("signalbridge:refresh-updates", run);
       document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,7 +169,8 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
         apply(p);
         setChanges(d.changes);
         setOffline(false);
-        const text = (d.changes as Change[]).filter((c) => c.type === "shelter_status").map((c) => describeChange(c, p)).join(". ");
+        window.dispatchEvent(new Event("signalbridge:refresh-updates"));
+        const text = (d.changes as Change[]).filter((c) => c.type === "shelter_status" || c.type.startsWith("road")).slice(0, 3).map((c) => describeChange(c, p)).join(". ");
         if (text) window.dispatchEvent(new CustomEvent("signalbridge:alert", { detail: `Heads up. ${text}.` }));
       }).catch(() => {});
     };
@@ -202,15 +205,6 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
         </div>
       )}
       <LiveTicker data={updates} loading={updatesLoading} saved={updatesSaved || offline} />
-      {changes.length > 0 && (
-        <div style={{ ...banner, borderLeft: "4px solid var(--accent)" }}>
-          <strong>Updated since your last check:</strong>
-          <ul style={{ margin: "0.4rem 0 0.4rem 1.2rem" }}>
-            {changes.map((c, i) => <li key={i}>{describeChange(c, packet)}</li>)}
-          </ul>
-          <button onClick={() => setChanges([])} style={{ padding: "0.3rem 0.7rem", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: "inherit", cursor: "pointer" }}>Dismiss</button>
-        </div>
-      )}
       <div style={{ margin: "0 1rem" }}>
         <span className="muted small">{syncing || updatesLoading ? "Updating…" : "Updates automatically"}</span>
           {!gpsActive && gpsStatus !== "denied" && gpsStatus !== "unavailable" && (

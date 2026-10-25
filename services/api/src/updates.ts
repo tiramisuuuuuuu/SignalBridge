@@ -322,6 +322,18 @@ async function fema(lat: number, lng: number, radius: number): Promise<Update[]>
 
 const RANK: Record<Sev, number> = { high: 0, medium: 1, low: 2 };
 
+// Extra items (the demo scenario), built fresh on every request so they appear instantly.
+let extra: (lat: number, lng: number) => Update[] = () => [];
+export function setExtraUpdates(fn: (lat: number, lng: number) => Update[]) { extra = fn; }
+function withExtra(data: any, lat: number, lng: number) {
+  let ex: Update[] = [];
+  try { ex = extra(lat, lng); } catch { /* ignore */ }
+  const ids = new Set(ex.map((u) => u.id));
+  const updates = [...ex, ...data.updates.filter((u: Update) => !ids.has(u.id))]
+    .sort((a, b) => RANK[a.severity] - RANK[b.severity] || Date.parse(b.updatedAt ?? "0") - Date.parse(a.updatedAt ?? "0"));
+  return { ...data, updates };
+}
+
 // ---- Caltrans Lane Closure System (California roads): closures in place right now ----
 const ctCache = new Map<number, { at: number; data: any[] }>();
 async function ctDistrict(n: number) {
@@ -410,7 +422,7 @@ export function registerUpdates(app: Express) {
 
     const key = `${place.lat.toFixed(2)},${place.lng.toFixed(2)},${radius}`;
     const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < TTL) return res.json({ ...hit.data, cached: true });
+    if (hit && Date.now() - hit.at < TTL) return res.json({ ...withExtra(hit.data, place.lat, place.lng), cached: true });
 
     const jobs: [string, Promise<Update[]>][] = [
       ["GDACS", gdacs(place.lat, place.lng, radius)],
@@ -437,6 +449,6 @@ export function registerUpdates(app: Express) {
 
     const data = { place, radiusMiles: radius, fetchedAt: new Date().toISOString(), updates, sources };
     if (sources.every((s) => s.ok)) cache.set(key, { at: Date.now(), data });
-    res.json({ ...data, cached: false });
+    res.json({ ...withExtra(data, place.lat, place.lng), cached: false });
   });
 }

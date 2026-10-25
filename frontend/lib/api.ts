@@ -90,7 +90,7 @@ export function describeChange(c: Change, p: Packet | null): string {
   const name = (p?.shelters ?? []).find((s: any) => s.id === c.shelterId)?.name ?? c.shelterId ?? "";
   if (c.type === "shelter_status") return `${name} changed from ${String(c.oldValue).toUpperCase()} to ${String(c.newValue).toUpperCase()}`;
   if (c.type === "shelter_capacity") return `${name} capacity changed from ${c.oldValue} to ${c.newValue}`;
-  return c.evidence ?? `${c.type}: ${String(c.oldValue)} → ${String(c.newValue)}`;
+  return (c.evidence ?? `${c.type}: ${String(c.oldValue)} → ${String(c.newValue)}`).replace(/\s*\(source updated[^)]*\)/i, "");
 }
 
 // ---- Assistant ----

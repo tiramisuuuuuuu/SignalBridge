@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>County Emergency Admin (demo)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f4f5f7; color: #1f2328; }
+  header { background: #0b3d91; color: #fff; padding: 14px 20px; }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 4px 0 0; font-size: 13px; opacity: .85; }
+  main { padding: 14px 20px; }
+  .row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .card { background: #fff; border: 1px solid #d0d7de; border-radius: 10px; padding: 12px 14px; }
+  .card h2 { font-size: 15px; margin: 0 0 8px; }
+  label { display: block; font-size: 13px; color: #57606a; margin: 6px 0 2px; }
+  select, input { width: 100%; font-size: 15px; padding: 6px 8px; border: 1px solid #d0d7de; border-radius: 6px; box-sizing: border-box; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+  button { font-size: 14px; padding: 9px 14px; border-radius: 8px; border: 1px solid #d0d7de; background: #fff; cursor: pointer; }
+  button.publish { background: #0b3d91; color: #fff; border-color: #0b3d91; font-weight: 600; }
+  button.surge { background: #b42318; color: #fff; border-color: #b42318; }
+  button.full { background: #9a6700; color: #fff; border-color: #9a6700; }
+  button.normal { background: #1a7f37; color: #fff; border-color: #1a7f37; }
+  #status { font-size: 13px; color: #57606a; }
+  .pages { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  iframe { width: 100%; height: 42vh; border: 1px solid #d0d7de; border-radius: 8px; background: #fff; }
+  .note { font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+<header>
+  <h1>County Emergency Admin (demo)</h1>
+  <p>Simulated official websites. Publishing updates the public shelter and road pages below.</p>
+</header>
+<main>
+  <div class="row">
+    <div class="card"><h2>Marina Community Shelter</h2>
+      <label>Status</label><select id="m-status"><option>Open</option><option>Full</option><option>Closed</option></select>
+      <label>Beds left</label><input id="m-cap" type="number" min="0" /></div>
+    <div class="card"><h2>Bayview Community Shelter</h2>
+      <label>Status</label><select id="b-status"><option>Open</option><option>Full</option><option>Closed</option></select>
+      <label>Beds left</label><input id="b-cap" type="number" min="0" /></div>
+    <div class="card"><h2>Highway 12</h2>
+      <label>Status</label><select id="r-status"><option>Open</option><option>Closed</option></select>
+      <label>Reason</label><input id="r-reason" placeholder="Wildfire" /></div>
+  </div>
+  <div class="bar">
+    <button class="publish" onclick="publish()">Publish update</button>
+    <span style="margin-left:8px;color:#57606a;font-size:13px">Presets:</span>
+    <button class="normal" onclick="preset('normal')">Normal</button>
+    <button class="surge" onclick="preset('surge')">Evacuation surge</button>
+    <button class="full" onclick="preset('full')">Marina full</button>
+    <span id="status"></span>
+  </div>
+  <div class="pages">
+    <iframe id="p-shelter" src="/shelter-status/"></iframe>
+    <iframe id="p-road" src="/transportation-alerts/"></iframe>
+  </div>
+  <p class="note">Demo data only. Not a real emergency service.</p>
+</main>
+<script>
+  const API = "http://localhost:4000";
+  const $ = (id) => document.getElementById(id);
+  const PRESETS = {
+    normal: { marina: { status: "Open", capacity: 38 }, bayview: { status: "Open", capacity: 60 }, highway12: { status: "Open", reason: "" } },
+    surge:  { marina: { status: "Open", capacity: 5 },  bayview: { status: "Open", capacity: 22 }, highway12: { status: "Closed", reason: "Wildfire" } },
+    full:   { marina: { status: "Full", capacity: 0 },  bayview: { status: "Open", capacity: 15 }, highway12: { status: "Closed", reason: "Wildfire" } },
+  };
+  function fill(s) {
+    $("m-status").value = s.marina.status; $("m-cap").value = s.marina.capacity;
+    $("b-status").value = s.bayview.status; $("b-cap").value = s.bayview.capacity;
+    $("r-status").value = s.highway12.status; $("r-reason").value = s.highway12.reason === "None" ? "" : s.highway12.reason;
+  }
+  function read() {
+    return {
+      marina: { status: $("m-status").value, capacity: Number($("m-cap").value) },
+      bayview: { status: $("b-status").value, capacity: Number($("b-cap").value) },
+      highway12: { status: $("r-status").value, reason: $("r-reason").value },
+    };
+  }
+  function reloadPages() {
+    const t = Date.now();
+    $("p-shelter").src = "/shelter-status/?t=" + t;
+    $("p-road").src = "/transportation-alerts/?t=" + t;
+  }
+  async function publish(body) {
+    $("status").textContent = "Publishing…";
+    try {
+      const r = await fetch(API + "/api/demo/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || read()) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+      fill(d.state);
+      $("status").textContent = "Published at " + new Date().toLocaleTimeString();
+      setTimeout(reloadPages, 300);
+    } catch (e) {
+      $("status").textContent = "Couldn't publish: " + e.message + " (is the API running?)";
+    }
+  }
+  function preset(name) { fill(PRESETS[name]); publish(PRESETS[name]); }
+  fetch(API + "/api/demo/state").then((r) => r.json()).then(fill).catch(() => { $("status").textContent = "API not reachable"; });
+</script>
+</body>
+</html>
