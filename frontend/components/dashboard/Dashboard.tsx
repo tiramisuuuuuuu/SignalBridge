@@ -190,7 +190,7 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
           <button onClick={() => setChanges([])} style={{ padding: "0.3rem 0.7rem", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: "inherit", cursor: "pointer" }}>Dismiss</button>
         </div>
       )}
-      <LiveTicker data={updates} loading={updatesLoading} saved={updatesSaved} />
+      <LiveTicker data={updates} loading={updatesLoading} saved={updatesSaved || offline} />
       <div style={{ margin: "0 1rem" }}>
         <span className="muted small">{syncing || updatesLoading ? "Updating…" : "Updates automatically"}</span>
           {!gpsActive && gpsStatus !== "denied" && gpsStatus !== "unavailable" && (
@@ -205,7 +205,7 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
         <div>
           <SignalMap me={mapCenter} accuracy={gpsActive ? gps?.accuracy : undefined} isGps={gpsActive} places={offline && offlineArea?.places?.length ? offlineArea.places : (places?.places ?? [])} showPlaces={offline} offlineArea={offlineArea} />
           <OfflineMaps center={mapCenter} online={!offline} onArea={setOfflineArea} />
-          <UpdatesFeed data={updates} loading={updatesLoading} saved={updatesSaved} error={updatesError} query={location.label} />
+          <UpdatesFeed data={updates} loading={updatesLoading} saved={updatesSaved || offline} error={updatesError} query={location.label} />
           <div style={{ marginTop: "1.5rem" }}>
             <h3 style={{ fontSize: "1rem", margin: "0 0 0.5rem" }}>Demo scenario (simulated data)</h3>
             <AlertsRow alerts={alerts} />
