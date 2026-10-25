@@ -72,7 +72,15 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
     };
     run();
     const t = setInterval(run, 2 * 60_000);
-    return () => { alive = false; clearInterval(t); };
+    const onVisible = () => { if (document.visibilityState === "visible") run(); };
+    window.addEventListener("online", run);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      clearInterval(t);
+      window.removeEventListener("online", run);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updatesLoc.label, updatesLoc.lat, updatesLoc.lng]);
   const [live, setLive] = useState<LiveData | null>(null);
@@ -133,11 +141,16 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
     apply(loadCachedPacket());
     refresh();
     const onOffline = () => setOffline(true);
+    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    const t = setInterval(refresh, 60_000);
     window.addEventListener("online", refresh);
     window.addEventListener("offline", onOffline);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
+      clearInterval(t);
       window.removeEventListener("online", refresh);
       window.removeEventListener("offline", onOffline);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [apply, refresh]);
 
@@ -179,7 +192,7 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
       )}
       <LiveTicker data={updates} loading={updatesLoading} saved={updatesSaved} />
       <div style={{ margin: "0 1rem" }}>
-        <button onClick={refresh} disabled={syncing} style={{ padding: "0.45rem 0.9rem", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface)", color: "inherit", cursor: "pointer", opacity: syncing ? 0.6 : 1 }}>{syncing ? "Checking…" : "Check for updates"}</button>
+        <span className="muted small">{syncing || updatesLoading ? "Updating…" : "Updates automatically"}</span>
           {!gpsActive && gpsStatus !== "denied" && gpsStatus !== "unavailable" && (
             <button onClick={() => setUseGpsMode(true)}
               style={{ marginLeft: "0.5rem", padding: "0.45rem 0.9rem", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface)", color: "inherit", cursor: "pointer" }}>
