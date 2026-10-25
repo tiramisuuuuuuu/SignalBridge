@@ -322,6 +322,76 @@ async function fema(lat: number, lng: number, radius: number): Promise<Update[]>
 
 const RANK: Record<Sev, number> = { high: 0, medium: 1, low: 2 };
 
+// ---- Caltrans Lane Closure System (California roads): closures in place right now ----
+const ctCache = new Map<number, { at: number; data: any[] }>();
+async function ctDistrict(n: number) {
+  const hit = ctCache.get(n);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.data;
+  const dd = String(n).padStart(2, "0");
+  const d = await getJSON(`https://cwwp2.dot.ca.gov/data/d${n}/lcs/lcsStatusD${dd}.json`, 15000);
+  const rows = (d.data ?? []).map((r: any) => r.lcs ?? r);
+  ctCache.set(n, { at: Date.now(), data: rows });
+  return rows;
+}
+const yes = (v: any) => v === true || String(v).toLowerCase() === "true";
+
+async function caltrans(lat: number, lng: number): Promise<Update[]> {
+  if (lat < 32.4 || lat > 42.1 || lng < -124.6 || lng > -114.0) return []; // California only
+  const results = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => ctDistrict(i + 1)));
+  if (results.every((r) => r.status === "rejected")) throw new Error("all Caltrans district feeds failed");
+  const rows = results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+  const out: Update[] = [];
+  for (const r of rows) {
+    const c = r.closure ?? {}, loc = r.location ?? {}, b = loc.begin ?? {}, e = loc.end ?? {};
+    // In place now: crews set it up (1097), not yet picked up (1098), not cancelled (1022).
+    if (!yes(c.code1097?.isCode1097) || yes(c.code1098?.isCode1098) || yes(c.code1022?.isCode1022)) continue;
+    const la = Number(b.beginLatitude), lo = Number(b.beginLongitude);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) continue;
+    const dist = miles(lat, lng, la, lo);
+    if (dist > 30) continue;
+    const dir = String(loc.travelFlowDirection ?? "").trim();
+    const dirOk = dir && !/^n\/?a$/i.test(dir);
+    const lc = String(c.lanesClosed ?? "").trim(), tl = String(c.totalExistingLanes ?? "").trim();
+    const lanes = lc && tl ? (/all/i.test(lc) ? `All ${tl} lane${tl === "1" ? "" : "s"} closed` : `${lc} of ${tl} lanes closed`) : null;
+    const type = String(c.typeOfClosure ?? "Lane");
+    const delay = Number(c.estimatedDelay) || 0;
+    const severity: Sev = /full/i.test(type) ? "high" : /ramp/i.test(type) || delay >= 15 ? "medium" : "low";
+    const route = [b.beginRoute, b.beginRouteSuffix].filter(Boolean).join("");
+    const ts = c.closureTimestamp ?? {};
+    const endEpoch = Number(ts.closureEndEpoch);
+    const recEpoch = Number(r.recordTimestamp?.recordEpoch) || Number(c.code1097?.code1097Epoch) || 0;
+    out.push({
+      id: `caltrans-${c.closureID ?? ""}-${c.logNumber ?? ""}-${r.index ?? out.length}`,
+      category: "road",
+      severity,
+      title: `${type} closure${route ? ` on ${route}` : ""}${dirOk ? ` ${dir}` : ""}${b.beginNearbyPlace ? ` near ${b.beginNearbyPlace}` : ""}`,
+      summary: clean([
+        c.typeOfWork,
+        lanes,
+        delay ? `Estimated delay ${delay} min` : null,
+      ]).join(" · "),
+      details: clean([
+        b.beginLocationName && `From: ${b.beginLocationName}${b.beginFreeFormDescription ? ` (${b.beginFreeFormDescription})` : ""}`,
+        e.endLocationName && `To: ${e.endLocationName}${e.endFreeFormDescription ? ` (${e.endFreeFormDescription})` : ""}`,
+        c.facility && `Facility: ${c.facility}`,
+        c.durationOfClosure && `Duration: ${c.durationOfClosure}`,
+        yes(ts.isClosureEndIndefinite) ? "End time: not set" : endEpoch > 0 ? `Scheduled to end: ${when(endEpoch * 1000)}` : null,
+        b.beginCounty && `County: ${b.beginCounty}`,
+      ]),
+      where: clean([route, b.beginNearbyPlace]).join(" · "),
+      lat: la, lng: lo, distanceMiles: round(dist),
+      sourceName: "Caltrans Lane Closure System",
+      sourceUrl: "https://quickmap.dot.ca.gov/",
+      updatedAt: recEpoch ? new Date(recEpoch * 1000).toISOString() : null,
+    });
+  }
+  const seenCt = new Set<string>(); // one closure is often reported as several segments
+  return out
+    .filter((u) => { const k = `${u.title}|${u.summary}`; if (seenCt.has(k)) return false; seenCt.add(k); return true; })
+    .sort((a, b) => RANK[a.severity] - RANK[b.severity] || (a.distanceMiles ?? 1e9) - (b.distanceMiles ?? 1e9))
+    .slice(0, 25);
+}
+
 export function registerUpdates(app: Express) {
   gdacs(0, 0, 1).catch(() => {}); // warm the GDACS cache at startup
   app.get("/api/updates", async (req, res) => {
@@ -349,6 +419,7 @@ export function registerUpdates(app: Express) {
       ["Air quality", airQuality(place.lat, place.lng, place.label)],
       ["NWS (US)", nws(place.lat, place.lng)],
       ["FEMA (US)", fema(place.lat, place.lng, radius)],
+      ["Caltrans (CA roads)", caltrans(place.lat, place.lng)],
     ];
     const settled = await Promise.allSettled(jobs.map(([, p]) => p));
     const sources = jobs.map(([name], i) => {
