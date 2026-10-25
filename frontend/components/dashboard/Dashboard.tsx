@@ -28,9 +28,11 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
   // Exact device location stays on this device; the backend only gets ~1 km rounded coordinates.
   const [gps, setGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [gpsStatus, setGpsStatus] = useState<"pending" | "granted" | "denied" | "unavailable">("pending");
-  const [useGpsMode, setUseGpsMode] = useState(true);
+  // Only ask for location when the user chose "Use my current location" (that choice saves coordinates).
+  const [useGpsMode, setUseGpsMode] = useState(location.lat != null);
   const prevLabel = useRef(location.label);
   useEffect(() => {
+    if (!useGpsMode) return;
     if (typeof navigator === "undefined" || !navigator.geolocation) { setGpsStatus("unavailable"); return; }
     const get = () => navigator.geolocation.getCurrentPosition(
       (pos) => { setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }); setGpsStatus("granted"); },
@@ -40,10 +42,10 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
     get();
     const t = setInterval(get, 5 * 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [useGpsMode]);
   // Picking a city in the header switches to that city; "Use my current location" switches back.
   useEffect(() => {
-    if (location.label !== prevLabel.current) { prevLabel.current = location.label; setUseGpsMode(false); }
+    if (location.label !== prevLabel.current) { prevLabel.current = location.label; setUseGpsMode(location.lat != null); }
   }, [location.label]);
   const gpsActive = useGpsMode && gpsStatus === "granted" && !!gps;
   const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -175,7 +177,7 @@ export default function Dashboard({ location, onChangeLocation }: { location: Us
       <LiveTicker data={updates} loading={updatesLoading} saved={updatesSaved} />
       <div style={{ margin: "0 1rem" }}>
         <button onClick={refresh} disabled={syncing} style={{ padding: "0.45rem 0.9rem", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface)", color: "inherit", cursor: "pointer", opacity: syncing ? 0.6 : 1 }}>{syncing ? "Checking…" : "Check for updates"}</button>
-          {!gpsActive && gpsStatus === "granted" && (
+          {!gpsActive && gpsStatus !== "denied" && gpsStatus !== "unavailable" && (
             <button onClick={() => setUseGpsMode(true)}
               style={{ marginLeft: "0.5rem", padding: "0.45rem 0.9rem", borderRadius: 999, border: "1px solid var(--line)", background: "var(--surface)", color: "inherit", cursor: "pointer" }}>
               📍 Use my current location
